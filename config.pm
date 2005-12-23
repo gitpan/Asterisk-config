@@ -2,19 +2,14 @@ package Asterisk::config;
 ###########################################################
 #		read and write asterisk config files
 ###########################################################
-#	Copyright (c) 1995-2006  hoowa sun	China
+#	Copyright (c) 2005-2006  hoowa sun	P.R.China
 #
 #	See COPYRIGHT section in pod text below for usage and distribution rights.
 #
-###########################################################
 #	<hoowa.sun@gmail.com>
 #	www.perlchina.org / www.openpbx.cn
 #	last modify 2005-12-23
-#	we don't support extension file reules.
-#
-#	0.4 2005-12-23 add assign_matchreplace
-#	0.1	2005-11-29 start....
-#
+###########################################################
 
 my (@commit_list);
 
