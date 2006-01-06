@@ -1,3 +1,12 @@
+
+Download this module from www.cpan.org
 perl Makefile.PL
 make
 make install
+
+or
+
+perl -MCPAN -e shell
+install Asterisk::config
+
+

@@ -8,12 +8,12 @@ package Asterisk::config;
 #
 #	<hoowa.sun@gmail.com>
 #	www.perlchina.org / www.openpbx.cn
-#	last modify 2005-12-23
+#	last modify 2006-1-6
 ###########################################################
 
 my (@commit_list);
 
-$VERSION=0.4;
+my $VERSION=0.5;
 
 sub new {
 	my $self = {};
@@ -23,14 +23,21 @@ sub new {
 
 ##############################
 #  METHOD
-#  load config from file
+#  load config from file or from stream data
 sub load_config {
 	my $self = shift;
 	my $filename = shift;
+	my $stream_data = shift;
 
-	open(DATA,"<$filename") or die "$!";
-	my @DATA = <DATA>;
-	close(DATA);
+	my @DATA;
+
+	if ($stream_data eq '') {
+		open(DATA,"<$filename") or die "$!";
+		@DATA = <DATA>;
+		close(DATA);
+	} else {
+		@DATA = split(/\n/,$stream_data);
+	}
 	chomp(@DATA);
 
 	my (%DATA,$last_section_name);
@@ -442,7 +449,20 @@ Asterisk::config - the Asterisk config read and write module.
 
 =head1 SYNOPSIS
 
-none
+my $rc = new Asterisk::config;
+my ($cfg,$res) = $rc->load_config([filename],[streamdata]);
+
+print $cfg->{'[unsection]'}{'test'}[0];
+
+print $cfg->{'[global]'}{'allow'}[1];
+
+...
+
+$rc->assign_append(point=>'down',data=>$user_data);
+
+$rc->save_file(filename=>[filename],resource=>$res);
+
+...
 
 =head1 DESCRIPTION
 
@@ -450,7 +470,7 @@ Asterisk is most popular Opensource PBX in PBX World!
 
 =head1 METHOD
 
-none
+see comment in module source.
 
 =head1 AUTHORS
 
@@ -469,11 +489,13 @@ License or the Artistic License, as specified in the Perl README file.
 =head1 SUPPORT / WARRANTY
 
 The Asterisk::config is free Open Source software.
+
 IT COMES WITHOUT WARRANTY OF ANY KIND.
 
 =head2 Support
 
 Please logon IRC://irc.freenode.org/ #perlchina, and call me:)
+
 Pure chinese Forum available http://www.openpbx.cn
 
 =cut

@@ -1,3 +1,7 @@
+0.5 2006-1-6
+	- support stream in load_config
+	- my $VERSION
+
 0.4 2005-12-23
 	- add assign_matchreplace
 
