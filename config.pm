@@ -8,12 +8,13 @@ package Asterisk::config;
 #
 #	<hoowa.sun@gmail.com>
 #	www.perlchina.org / www.openpbx.cn
-#	last modify 2006-1-6
+#	last modify 2006-2-19
 ###########################################################
+$Asterisk::config::VERSION='0.6';
 
-my (@commit_list);
-
-my $VERSION=0.5;
+use strict;
+use vars qw/@commit_list/;
+use Fcntl ':flock';
 
 sub new {
 	my $self = {};
@@ -26,17 +27,18 @@ sub new {
 #  load config from file or from stream data
 sub load_config {
 	my $self = shift;
-	my $filename = shift;
-	my $stream_data = shift;
+	my %args = @_;
+#	my $filename = shift;
+#	my $stream_data = shift;
 
 	my @DATA;
 
-	if ($stream_data eq '') {
-		open(DATA,"<$filename") or die "$!";
+	if (!$args{'stream_data'}) {
+		open(DATA,"<$args{'filename'}") or die "$!";
 		@DATA = <DATA>;
 		close(DATA);
 	} else {
-		@DATA = split(/\n/,$stream_data);
+		@DATA = split(/\n/,$args{'stream_data'});
 	}
 	chomp(@DATA);
 
@@ -55,7 +57,7 @@ sub load_config {
 		if ($line_sp =~ /^\#/) {
 			my $section_name = $last_section_name;
 			$section_name = '[unsection]' if (!$section_name);
-			$DATA{$section_name}{$key}=[] if (!$DATA{$section_name}{$key});
+			$DATA{$section_name}{$line_sp}=[] if (!$DATA{$section_name}{$line_sp});
 
 			push(@{$DATA{$section_name}{$line_sp}},$line_sp);
 			next;
@@ -64,7 +66,8 @@ sub load_config {
 		#right key/value???
 		if ($line_sp =~ /\=/) {
 			#split data and key
-			my ($key,$value)=split(/\=(.+)/,$line_sp);
+			my ($key,$value)=split(/\=(.*)/,$line_sp);
+
 			$key =~ s/^(\s+)//;		$key =~ s/(\s+)$//;
 			$value=~ s/^\>//g;	$value =~ s/^(\s+)//;	$value =~ s/(\s+)$//;
 
@@ -136,19 +139,13 @@ return($string);
 # split key value of data
 sub clean_keyvalue {
 	my $string = shift;
-	my ($key,$value)=split(/\=(.+)/,$string);
+	my ($key,$value)=split(/\=(.*)/,$string);
 	$key =~ s/^(\s+)//;		$key =~ s/(\s+)$//;
-	$value=~ s/^\>//g;		$value =~ s/^(\s+)//;	$value =~ s/(\s+)$//;
+	if ($value) {
+		$value=~ s/^\>//g;		$value =~ s/^(\s+)//;	$value =~ s/(\s+)$//;
+	}
 return($key,$value);
 }
-
-##############################
-#  METHOD
-#  clean all assign before
-sub clean_assign {
-	undef(@commit_list);
-}
-
 
 # income scalar,array ref,hash ref output array data
 sub format_convert {
@@ -164,6 +161,13 @@ sub format_convert {
 	} else {
 		return($string);
 	}
+}
+
+##############################
+#  METHOD
+#  clean all assign before
+sub clean_assign {
+	undef(@commit_list);
 }
 
 ##############################
@@ -289,6 +293,8 @@ sub save_file {
 return();
 }
 
+##########################
+# kernel do
 sub do_matchreplace {
 	my $one_case = shift;
 	my $data = shift;
@@ -427,10 +433,10 @@ sub do_editkey {
 			#split data and key
 			my ($key,$value)=&clean_keyvalue($line_sp);
 
-			if ($key eq $one_case->{'key'} & !$one_case->{'value'}) {			#继续处理模式
+			if ($key eq $one_case->{'key'} && !$one_case->{'value'}) {			#处理全部匹配的key的value值
 				$one_line = "$key=".$one_case->{'new_value'};
 				undef($one_line) if ($one_case->{'action'} eq 'delkey');
-			} elsif ($key eq $one_case->{'key'} & $one_case->{'value'} eq $value) {	#一次处理模式
+			} elsif ($key eq $one_case->{'key'} && $one_case->{'value'} eq $value) {	#处理唯一匹配的key的value值
 				$one_line = "$key=".$one_case->{'new_value'};
 				undef($one_line) if ($one_case->{'action'} eq 'delkey');
 				$auto_save = 1;
@@ -449,34 +455,192 @@ Asterisk::config - the Asterisk config read and write module.
 
 =head1 SYNOPSIS
 
-my $rc = new Asterisk::config;
-my ($cfg,$res) = $rc->load_config([filename],[streamdata]);
+	use Asterisk::config;
 
-print $cfg->{'[unsection]'}{'test'}[0];
+	my $rc = new Asterisk::config;
+	my ($cfg,$res) = $rc->load_config(filename=>[configfile],stream_data=>[strings]);
 
-print $cfg->{'[global]'}{'allow'}[1];
+	print $cfg->{'[unsection]'}{'test'}[0];
 
-...
+	print $cfg->{'[global]'}{'allow'}[1];
 
-$rc->assign_append(point=>'down',data=>$user_data);
+	$rc->assign_append(point=>'down',data=>$user_data);
 
-$rc->save_file(filename=>[filename],resource=>$res);
+	$rc->save_file(filename=>[filename],resource=>$res);
 
-...
 
 =head1 DESCRIPTION
 
-Asterisk is most popular Opensource PBX in PBX World!
+Asterisk::config know how Asterisk config difference with 
+standard ini config. this moudle make interface for read and
+write Asterisk config files and Asterisk extension configs.
 
 =head1 METHOD
 
-see comment in module source.
+=head2 new
+
+	my $rc = new Asterisk::config;
+
+Instantiates a new object.
+
+=head2 load_config
+
+	$rc->(filename=>[configfile],stream_data=>[strings]);
+
+load config from file or from stream data.
+
+=over 2
+
+=item * configfile -> config file path and name.
+
+=item * stream_data -> instead of C<filename>, data from 
+strings.
+
+=back
+
+=head2 assign_cleanfile
+
+	$rc->assign_cleanfile();
+	
+be sure clean all data from current file.
+
+=head2 assign_matchreplace
+
+	$rc->assign_matchreplace(match=>,replace=>);
+
+replace new data when matched.
+
+=over 2
+
+=item * match -> string of matched data.
+
+=item * replace -> new data.
+
+=back
+
+=head2 assign_append
+
+	$rc->assign_append(point=>['up'|'down'],
+		section=>[section],
+		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
+		);
+
+append data around with section name.
+
+=over 3
+
+=item * point -> append data C<up> / C<down> with section.
+
+=item * section -> matched section name, except [unsection].
+
+=item * data -> new replace data in string/array/hash.
+
+=back
+
+	$rc->assign_append(point=>['up'|'down'|'over'],
+		section=>[section],
+		comkey=>[key,value],
+		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
+		);
+
+append data around with section name and key/value in same section.
+
+=over 2
+
+=item * point -> C<over> will overwrite with key/value matched.
+
+=item * comkey -> match key and value.
+
+=back
+
+	$rc->assign_append(point=>'up'|'down',
+		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
+		);
+
+simple append data without any section.
+
+=head2 assign_replacesection
+
+	$rc->assign_replacesection(section=>[section],
+		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
+		);
+
+replace the section body data,except "#" in body.
+
+=over 1
+
+=item * section -> all section and [unsection].
+
+=back
+
+=head2 assign_delsection
+
+	$rc->assign_delsection(section=>[section]);
+
+erase section name and section data.
+
+=over 1
+
+=item * section -> all section and [unsection].
+
+=back
+
+=head2 assign_editkey
+
+	$rc->assign_editkey(section=>[section],key=>[keyname],value=>[value],new_value=>[new_value]);
+
+modify value with matched section.if don't assign value=> will replace all matched key. 
+
+exp script:
+
+	$rc->assign_editkey(section=>'990001',key=>'all',new_value=>'gsm');
+
+data:
+
+	all=g711
+	all=ilbc
+
+will convert to:
+
+	all=gsm
+	all=gsm
+
+
+=head2 assign_delkey
+
+	$rc->assign_delkey(section=>[section],key=>[keyname],value=>[value]);
+
+erase all matched C<keyname> in section or in [unsection].
+
+=head2 save_file
+
+	$rc->save_file(filename=>[filename],resource=>[resource]);
+
+process assign rules and save to file.
+
+=over 2
+
+=item * filename -> save to file name.
+
+=item * resource -> instand of filename must resource return load_config or
+file handle.
+
+=back
+
+=head2 clean_assign
+
+	$rc->clean_assign();
+
+clean all assign rules.
+
+=head1 EXAMPLES
+
+be come soon...
+
 
 =head1 AUTHORS
 
 Asterisk::config by hoowa sun.  This pod text by hoowa sun only.
-
-who can help me for full POD text?
 
 =head1 COPYRIGHT
 
@@ -486,13 +650,13 @@ All rights reserved.
 You may distribute under the terms of either the GNU General Public
 License or the Artistic License, as specified in the Perl README file.
 
-=head1 SUPPORT / WARRANTY
+=head1 WARRANTY
 
 The Asterisk::config is free Open Source software.
 
 IT COMES WITHOUT WARRANTY OF ANY KIND.
 
-=head2 Support
+=head1 SUPPORT
 
 Please logon IRC://irc.freenode.org/ #perlchina, and call me:)
 

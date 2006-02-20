@@ -1,9 +1,18 @@
+0.6 2006-2-19
+	- change load_config parameters to hash struct.
+	- fix split (.+) to (.*) in sub clean_keyvalue.
+	- fix split (.+) to (.*) in sub load_config.
+	- add use Fcntl ':flock' for disable flock warnings.
+	- more POD docs.
+	- fix VERSION variable.
+	- fix $stream_data warnings in load_config using strict.
+	- fix # warnings in load_config using strict.
 0.5 2006-1-6
-	- support stream in load_config
+	- support stream in load_config.
 	- my $VERSION
 
 0.4 2005-12-23
-	- add assign_matchreplace
+	- add assign_matchreplace.
 
 0.1 2005-11-29
         - start....
