@@ -10,14 +10,17 @@ package Asterisk::config;
 #	www.perlchina.org / www.openpbx.cn
 #	last modify 2006-2-19
 ###########################################################
-$Asterisk::config::VERSION='0.6';
+$Asterisk::config::VERSION='0.7';
 
 use strict;
-use vars qw/@commit_list/;
+#0.6-use vars qw/@commit_list/;
 use Fcntl ':flock';
 
 sub new {
-	my $self = {};
+#0.6-	my $self = {};
+	my $self = {
+		commit_list => [],
+	};
 	bless $self;
 	return $self;
 }
@@ -130,9 +133,13 @@ sub check_import_number {
 # clean ; data from string end
 sub clean_string {
 	my $string = shift;
+	return '' unless $string;
 	($string,undef)=split(/\;/,$string);
-	$string =~ s/^(\s+)//;
-	$string =~ s/(\s+)$//;
+#0.6-	$string =~ s/^(\s+)//;
+#0.6-	$string =~ s/(\s+)$//;
+#0.6-return($string);
+	$string =~ s/^\s+//;
+	$string =~ s/\s+$//;
 return($string);
 }
 
@@ -167,7 +174,9 @@ sub format_convert {
 #  METHOD
 #  clean all assign before
 sub clean_assign {
-	undef(@commit_list);
+	my $self = shift;
+	undef($self->{commit_list});
+#0.6-	undef(@commit_list);
 }
 
 ##############################
@@ -177,7 +186,8 @@ sub assign_cleanfile {
 	my $self = shift;
 	my %hash = @_;
 	$hash{'action'}='cleanfile';
-	push(@commit_list,\%hash);
+	push(@{$self->{commit_list}},\%hash);
+#0.6-	push(@commit_list,\%hash);
 }
 
 ##############################
@@ -188,7 +198,8 @@ sub assign_matchreplace {
 	my $self = shift;
 	my %hash = @_;
 	$hash{'action'}='matchreplace';
-	push(@commit_list,\%hash);
+	push(@{$self->{commit_list}},\%hash);
+#0.6-	push(@commit_list,\%hash);
 }
 
 ##############################
@@ -204,7 +215,8 @@ sub assign_append {
 	my $self = shift;
 	my %hash = @_;
 	$hash{'action'}='append';
-	push(@commit_list,\%hash);
+	push(@{$self->{commit_list}},\%hash);
+#0.6-	push(@commit_list,\%hash);
 }
 
 ##############################
@@ -216,7 +228,8 @@ sub assign_replacesection {
 	my $self = shift;
 	my %hash = @_;
 	$hash{'action'}='replacesection';
-	push(@commit_list,\%hash);
+	push(@{$self->{commit_list}},\%hash);
+#0.6-	push(@commit_list,\%hash);
 }
 
 ##############################
@@ -228,7 +241,20 @@ sub assign_delsection {
 	my $self = shift;
 	my %hash = @_;
 	$hash{'action'}='delsection';
-	push(@commit_list,\%hash);
+	push(@{$self->{commit_list}},\%hash);
+#0.6-	push(@commit_list,\%hash);
+}
+
+##############################
+#  METHOD
+#  add section
+#  assign_addsection(section=>sectionname)
+sub assign_addsection {
+
+	my $self = shift;
+	my %hash = @_;
+	$hash{action} = 'addsection';
+	push(@{$self->{commit_list}}, \%hash);
 }
 
 ##############################
@@ -240,7 +266,8 @@ sub assign_editkey {
 	my $self = shift;
 	my %hash = @_;
 	$hash{'action'}='editkey';
-	push(@commit_list,\%hash);
+	push(@{$self->{commit_list}},\%hash);
+#0.6-	push(@commit_list,\%hash);
 }
 
 ##############################
@@ -252,7 +279,8 @@ sub assign_delkey {
 	my $self = shift;
 	my %hash = @_;
 	$hash{'action'}='delkey';
-	push(@commit_list,\%hash);
+	push(@{$self->{commit_list}},\%hash);
+#0.6-	push(@commit_list,\%hash);
 }
 
 ##############################
@@ -272,9 +300,11 @@ sub save_file {
 		$args{'resource'}=\@DATA;
 	}
 
-	foreach my $one_case (@commit_list) {
+#0.6-	foreach my $one_case (@commit_list) {
+	foreach my $one_case (@{$self->{commit_list}}) {
 		$args{'resource'} = &do_editkey($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'editkey' || $one_case->{'action'} eq 'delkey');
 		$args{'resource'} = &do_delsection($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'delsection' || $one_case->{'action'} eq 'replacesection');
+		$args{'resource'} = &do_addsection($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'addsection');
 		$args{'resource'} = &do_append($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'append');
 		$args{'resource'} = &do_matchreplace($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'matchreplace');
 		if ($one_case->{'action'} eq 'cleanfile') {
@@ -413,6 +443,31 @@ sub do_delsection {
 return(\@NEW);
 }
 
+sub do_addsection {
+
+	my $one_case = shift;
+	my $data = shift;
+	my $exists = 0;
+	my $section = '[' . $one_case->{section} . ']';
+	
+	foreach my $one_line(@$data) {
+
+		my $line_sp=&clean_string($one_line);
+		if($line_sp =~ /^\[.+\]/) {
+
+			if ($section eq $line_sp) {
+				$exists = 1;
+				last;
+			}
+		}
+	}
+	unless($exists) {
+
+		push(@$data, $section);
+	}
+	return $data;
+}
+
 sub do_editkey {
 	my $one_case = shift;
 	my $data = shift;
@@ -469,11 +524,16 @@ Asterisk::config - the Asterisk config read and write module.
 	$rc->save_file(filename=>[filename],resource=>$res);
 
 
+
 =head1 DESCRIPTION
 
 Asterisk::config know how Asterisk config difference with 
 standard ini config. this moudle make interface for read and
 write Asterisk config files and Asterisk extension configs.
+
+=head1 NOTE
+
+please use = instand of => in your config files.
 
 =head1 METHOD
 
@@ -585,6 +645,18 @@ erase section name and section data.
 
 =back
 
+=head2 assign_addsection
+
+	$rc->assign_addsection(section=>[section]);
+
+add section with name.
+
+=over 1
+
+=item * section -> name of new section.
+
+=back
+
 =head2 assign_editkey
 
 	$rc->assign_editkey(section=>[section],key=>[keyname],value=>[value],new_value=>[new_value]);
@@ -637,10 +709,11 @@ clean all assign rules.
 
 be come soon...
 
-
 =head1 AUTHORS
 
-Asterisk::config by hoowa sun.  This pod text by hoowa sun only.
+Asterisk::config by hoowa sun.
+
+Version 0.7 patch by Liu Hailong.
 
 =head1 COPYRIGHT
 
@@ -658,9 +731,11 @@ IT COMES WITHOUT WARRANTY OF ANY KIND.
 
 =head1 SUPPORT
 
-Please logon IRC://irc.freenode.org/ #perlchina, and call me:)
+Email(Chinese & English) hoowa.sun@gmail.com
 
-Pure chinese Forum available http://www.openpbx.cn
+Chinese OpenPBX technology Forum http://www.openpbx.cn
+
+Chinese Perl Forum http://bbs.perlchina.org
 
 =cut
 
