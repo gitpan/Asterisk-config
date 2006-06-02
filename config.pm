@@ -8,9 +8,9 @@ package Asterisk::config;
 #
 #	<hoowa.sun@gmail.com>
 #	www.perlchina.org / www.openpbx.cn
-#	last modify 2006-2-19
+#	last modify 2006-6-2
 ###########################################################
-$Asterisk::config::VERSION='0.7';
+$Asterisk::config::VERSION='0.8';
 
 use strict;
 #0.6-use vars qw/@commit_list/;
@@ -354,21 +354,49 @@ sub do_append {
 		}
 
 	} elsif ($one_case->{'comkey'} eq '') {
+#0.7-		my $auto_save=0;
+#0.7-		foreach my $one_line (@$data) {
+			#tune on auto save
+#0.7-			if ($auto_save) {			push(@NEW,$one_line);			next;		}
+			#check section
+#0.7-			my $line_sp=&clean_string($one_line);
+#0.7-			my ($section_name) = $line_sp =~ /^\[(.+)\]/;
+#0.7-			if ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'up') {
+#0.7-				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;
+#0.7-			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'down') {
+#0.7-				push(@NEW,$one_line);	push(@NEW,&format_convert($one_case->{'data'}));
+#0.7-				$one_line=undef;		$auto_save=1;
+#0.7-			}
+#0.7-			push(@NEW,$one_line);
+#0.7-		}
 	#Append data head/foot of section_name
-		my $auto_save=0;
+		my $auto_save=0;	my	$save_tmpmem=0;	my	$offset=0;
 		foreach my $one_line (@$data) {
 			#tune on auto save
-			if ($auto_save) {			push(@NEW,$one_line);			next;		}
+			if ($auto_save) {			push(@NEW,$one_line);			$offset++;	next;		}
 			#check section
-			my $line_sp=&clean_string($one_line);
-			my ($section_name) = $line_sp =~ /^\[(.+)\]/;
+			my $line_sp=&clean_string($one_line);			my ($section_name) = $line_sp =~ /^\[(.+)\]/;
+
+			# for up / down
 			if ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'up') {
 				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;
 			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'down') {
-				push(@NEW,$one_line);	push(@NEW,&format_convert($one_case->{'data'}));
-				$one_line=undef;		$auto_save=1;
+				push(@NEW,$one_line);	$one_line=&format_convert($one_case->{'data'});		$auto_save=1;
+			# for foot 发现匹配的section
+			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'foot') {
+				$save_tmpmem=1;
+			# for foot 发现要从匹配的section换成新section
+			} elsif ($save_tmpmem == 1 && $section_name && $one_case->{'section'} ne $section_name) {
+				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;	$save_tmpmem=0;
+			# for foot 发现匹配的section已经到达整个结尾
+			} 
+			if ($save_tmpmem == 1 && $offset==$#{$data}) {
+				push(@NEW,$one_line);	$one_line=&format_convert($one_case->{'data'});
+				$auto_save=1;	$save_tmpmem=0;
 			}
+
 			push(@NEW,$one_line);
+			$offset++;
 		}
 
 	} else {
@@ -390,14 +418,17 @@ sub do_append {
 				if ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'up') {
 					push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;
 				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'down') {
-					push(@NEW,$one_line);	push(@NEW,&format_convert($one_case->{'data'}));
-					$one_line=undef;		$auto_save=1;
+#0.7-					push(@NEW,$one_line);	push(@NEW,&format_convert($one_case->{'data'}));
+#0.7-					$one_line=undef;		$auto_save=1;
+					push(@NEW,$one_line);	$one_line=&format_convert($one_case->{'data'});
+					$auto_save=1;
 				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'over') {
-					push(@NEW,&format_convert($one_case->{'data'}));
-					$one_line=undef;		$auto_save=1;
+#0.7-					push(@NEW,&format_convert($one_case->{'data'}));
+#0.7-					$one_line=undef;		$auto_save=1;
+					$one_line=&format_convert($one_case->{'data'});		$auto_save=1;
 				}
 			}
-			push(@NEW,$one_line) if ($one_line);
+			push(@NEW,$one_line) #0.7-	if ($one_line);
 		}
 
 	}
@@ -432,8 +463,9 @@ sub do_delsection {
 				$last_section_name = $1;
 				next if ($one_case->{'action'} eq 'delsection');
 				push(@NEW,$one_line);
-				push(@NEW,&format_convert($one_case->{'data'}));
-				$one_line=undef;
+#0.7-				push(@NEW,&format_convert($one_case->{'data'}));
+#0.7-				$one_line=undef;
+				$one_line=&format_convert($one_case->{'data'});
 			}
 		}
 
@@ -580,7 +612,7 @@ replace new data when matched.
 
 =head2 assign_append
 
-	$rc->assign_append(point=>['up'|'down'],
+	$rc->assign_append(point=>['up'|'down'|'foot'],
 		section=>[section],
 		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
 		);
@@ -589,7 +621,7 @@ append data around with section name.
 
 =over 3
 
-=item * point -> append data C<up> / C<down> with section.
+=item * point -> append data C<up> / C<down> / C<foot> with section.
 
 =item * section -> matched section name, except [unsection].
 
