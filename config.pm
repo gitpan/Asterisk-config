@@ -1,54 +1,87 @@
 package Asterisk::config;
-###########################################################
-#		read and write asterisk config files
-###########################################################
-#	Copyright (c) 2005-2006  hoowa sun	P.R.China
+#--------------------------------------------------------------
 #
-#	See COPYRIGHT section in pod text below for usage and distribution rights.
+#	Asterisk::config - asterisk config files read and write
 #
-#	<hoowa.sun@gmail.com>
-#	www.perlchina.org / www.openpbx.cn
-#	last modify 2006-6-2
-###########################################################
-$Asterisk::config::VERSION='0.8';
+#	Copyright (C) 2005 - 2008, Sun bing.
+#
+#	Sun bing <hoowa.sun@gmail.com>
+#
+#
+#   LICENSE
+#   The Asterisk::config is licensed under the GNU 2.0 GPL. 
+#   Asterisk::config carries no restrictions on re-branding
+#   and people are free to commercially re-distribute it.
+#
+#
+#--------------------------------------------------------------
+$Asterisk::config::VERSION='0.9';
 
 use strict;
-#0.6-use vars qw/@commit_list/;
 use Fcntl ':flock';
 
+##############################
+#  CLASS METHOD
 sub new {
-#0.6-	my $self = {};
-	my $self = {
+my	$class = shift;
+my	%args = @_;
+my	(@resource_list,$resource_list,$parsed_conf,$comment_flag);
+
+	#try read
+	return(0) if (!defined $args{file});
+	return(0) if (!-e $args{file});
+	if (defined $args{'stream_data'}) {
+		@resource_list = split(/\n/,$args{'stream_data'});
+	} else {
+		open(DATA,"<$args{'file'}") or die "Asterisk-config Can't Open file : $!";
+		@resource_list = <DATA>;
+		close(DATA);
+	}
+	chomp(@resource_list);
+	#try parse
+	$comment_flag = '\;|\#';
+	$parsed_conf = &_parse(\@resource_list,$comment_flag);
+
+	#try define default variable
+	$args{'keep_resource_array'} = 1 if (!defined $args{'keep_resource_array'});
+	if (defined $args{'keep_resource_array'} && $args{'keep_resource_array'}) {
+		$resource_list = \@resource_list;
+	}
+	if (!defined $args{'clean_when_reload'}) {
+		$args{'clean_when_reload'} = 1;
+	}
+	if (!defined $args{'reload_when_save'}) {
+		$args{'reload_when_save'} = 1;
+	}
+
+my	$self = {
+		#user input
+		file=> $args{'file'},
+		keep_resource_array=> $args{'keep_resource_array'},
+		clean_when_reload=> $args{'clean_when_reload'},
+		reload_when_save=> $args{'reload_when_save'},
+
+		#internal
 		commit_list => [],
+		parsed_conf=> $parsed_conf,
+		resource_list=> $resource_list,
+		comment_flag=> $comment_flag,
 	};
-	bless $self;
+	bless $self,$class;
 	return $self;
 }
 
 ##############################
-#  METHOD
-#  load config from file or from stream data
-sub load_config {
-	my $self = shift;
-	my %args = @_;
-#	my $filename = shift;
-#	my $stream_data = shift;
+#  INTERNAL SUBROUTE _parse
+# parse conf
+sub _parse {
+my	$resource_list = $_[0];
+my	$comment_flag = $_[1];
 
-	my @DATA;
-
-	if (!$args{'stream_data'}) {
-		open(DATA,"<$args{'filename'}") or die "$!";
-		@DATA = <DATA>;
-		close(DATA);
-	} else {
-		@DATA = split(/\n/,$args{'stream_data'});
-	}
-	chomp(@DATA);
-
-	my (%DATA,$last_section_name);
+my (%DATA,$last_section_name);
 	$DATA{'[unsection]'}={};
-	foreach my $one_line (@DATA) {
-		my $line_sp=&clean_string($one_line);
+	foreach my $one_line (@$resource_list) {
+	my	$line_sp=&_clean_string($one_line,$comment_flag);
 		next if ($line_sp eq '');#next if just comment
 
 		#right [section]???
@@ -58,7 +91,7 @@ sub load_config {
 
 		#right sharp "#" ???
 		if ($line_sp =~ /^\#/) {
-			my $section_name = $last_section_name;
+		my	$section_name = $last_section_name;
 			$section_name = '[unsection]' if (!$section_name);
 			$DATA{$section_name}{$line_sp}=[] if (!$DATA{$section_name}{$line_sp});
 
@@ -69,94 +102,473 @@ sub load_config {
 		#right key/value???
 		if ($line_sp =~ /\=/) {
 			#split data and key
-			my ($key,$value)=split(/\=(.*)/,$line_sp);
+		my	($key,$value)=&_clean_keyvalue($line_sp);
 
-			$key =~ s/^(\s+)//;		$key =~ s/(\s+)$//;
-			$value=~ s/^\>//g;	$value =~ s/^(\s+)//;	$value =~ s/(\s+)$//;
-
-			my $section_name = $last_section_name;
+		my	$section_name = $last_section_name;
 			$section_name = '[unsection]' if (!$section_name);
 			$DATA{$section_name}{$key}=[] if (!$DATA{$section_name}{$key});
 			push(@{$DATA{$section_name}{$key}},$value);
 			next;
 		}
-
 	}
 
-	return(\%DATA,\@DATA);
-}
-
-#####################
-#	cookie for our
-#####################
-sub check_nvd {
-	if (shift=~/[^a-zA-Z0-9\.]/) {
-		return(0);
-	} else {
-		return(1);
-	}
-}
-
-sub check_value {
-	if (shift=~/[^a-zA-Z0-9]/) {
-		return(0);
-	} else {
-		return(1);
-	}
-}
-
-sub check_digits {
-	if (shift=~/[^0-9\*\#]/) {
-		return(0);
-	} else {
-		return(1);
-	}
-}
-
-sub check_number {
-	if (shift=~/[^0-9]/) {
-		return(0);
-	} else {
-		return(1);
-	}
-}
-
-sub check_import_number {
-	if (shift=~/[^0-9,\s]/) {
-		return(0);
-	} else {
-		return(1);
-	}
+return(\%DATA);
 }
 
 ##############################
-# clean ; data from string end
-sub clean_string {
-	my $string = shift;
+#  INTERNAL SUBROUTE _clean_string
+# clean strings
+sub _clean_string {
+my	$string = shift;
+my	$comment_flag = shift;
 	return '' unless $string;
-	($string,undef)=split(/\;/,$string);
-#0.6-	$string =~ s/^(\s+)//;
-#0.6-	$string =~ s/(\s+)$//;
-#0.6-return($string);
+	if ($string !~ /^\#/) {
+		($string,undef)=split(/$comment_flag/,$string);
+	}
 	$string =~ s/^\s+//;
 	$string =~ s/\s+$//;
 return($string);
 }
 
+##############################
+#  INTERNAL SUBROUTE _clean_string
 # split key value of data
-sub clean_keyvalue {
-	my $string = shift;
-	my ($key,$value)=split(/\=(.*)/,$string);
+sub _clean_keyvalue {
+my	$string = shift;
+my	($key,$value)=split(/\=(.*)/,$string);
 	$key =~ s/^(\s+)//;		$key =~ s/(\s+)$//;
 	if ($value) {
 		$value=~ s/^\>//g;		$value =~ s/^(\s+)//;	$value =~ s/(\s+)$//;
 	}
+
 return($key,$value);
 }
 
+##############################
+#  READ METHOD
+sub get_objvar
+{
+my	$self = shift;
+my	$varname = shift;
+	if (defined $self->{$varname}) {
+		return($self->{$varname});
+	} else {
+		return(0);
+	}
+}
+
+sub fetch_sections_list
+{
+my	$self = shift;
+my	@sections_list = grep(!/^\[unsection\]/, keys %{$self->{parsed_conf}});
+return(\@sections_list);
+}
+
+sub fetch_sections_hashref
+{
+my	$self = shift;
+return($self->{parsed_conf});
+}
+
+sub fetch_keys_list
+{
+my	$self = shift;
+my	%args = @_;
+	return(0) if (!defined $args{section});
+	return(0) if (!defined $self->{parsed_conf}{$args{section}});
+
+my	@keys_list = grep(!/^\[unsection\]/, keys %{$self->{parsed_conf}{$args{section}}});
+return(\@keys_list);
+}
+
+sub fetch_keys_hashref
+{
+my	$self = shift;
+my	%args = @_;
+	return(0) if (!defined $args{section});
+	return(0) if (!defined $self->{parsed_conf}{$args{section}});
+
+return($self->{parsed_conf}{$args{section}});
+}
+
+sub fetch_values_arrayref
+{
+my	$self = shift;
+my	%args = @_;
+	return(0) if (!defined $args{section});
+	return(0) if (!defined $self->{parsed_conf}{$args{section}});
+	return(0) if (!defined $args{key});
+	return(0) if (!defined $self->{parsed_conf}{$args{section}}{$args{key}});
+
+return($self->{parsed_conf}{$args{section}}{$args{key}});
+}
+
+sub reload
+{
+my	$self = shift;
+
+	#try read
+	return(0) if (!defined $self->{file});
+	return(0) if (!-e $self->{file});
+	open(DATA,"<$self->{'file'}") or die "Asterisk-config Can't Open file : $!";
+my	@resource_list = <DATA>;
+	close(DATA);
+	chomp(@resource_list);
+
+	# save to parsed_conf
+my	$parsed_conf = &_parse(\@resource_list,$self->{comment_flag});
+	$self->{parsed_conf} = $parsed_conf;
+
+	# save to resource_list
+my	$resource_list;
+	if (defined $self->{'keep_resource_array'} && $self->{'keep_resource_array'}) {
+		$resource_list = \@resource_list;
+	}
+	$self->{resource_list} = $resource_list;
+
+	# save to commit_list / do clean_when_reload ?
+	if (defined $self->{'clean_when_reload'} && $self->{'clean_when_reload'}) {
+		&clean_assign($self);
+	}
+
+
+return(1);
+}
+
+##############################
+#  WRITE METHOD
+
+sub clean_assign
+{
+my	$self = shift;
+	undef($self->{commit_list});
+return(1);
+}
+
+sub set_objvar
+{
+my	$self = shift;
+my	$key = shift;
+my	$value = shift;
+
+	return(0) if (!defined $value);
+	return(0) if (!exists $self->{$key});
+	$self->{$key} = $value;
+
+return(1);
+}
+
+#-----------------------------------------------------------
+#  assign method to commit_list
+sub assign_cleanfile
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{'action'}='cleanfile';
+	push(@{$self->{commit_list}},\%hash);
+}
+
+sub assign_matchreplace
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{'action'}='matchreplace';
+	push(@{$self->{commit_list}},\%hash);
+}
+
+sub assign_append
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{'action'}='append';
+	push(@{$self->{commit_list}},\%hash);
+}
+
+sub assign_replacesection
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{'action'}='replacesection';
+	push(@{$self->{commit_list}},\%hash);
+}
+
+sub assign_delsection
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{'action'}='delsection';
+	push(@{$self->{commit_list}},\%hash);
+}
+
+sub assign_addsection
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{action} = 'addsection';
+	push(@{$self->{commit_list}}, \%hash);
+}
+
+sub assign_editkey
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{'action'}='editkey';
+	push(@{$self->{commit_list}},\%hash);
+}
+
+sub assign_delkey
+{
+my	$self = shift;
+my	%hash = @_;
+	$hash{'action'}='delkey';
+	push(@{$self->{commit_list}},\%hash);
+}
+
+#-----------------------------------------------------------
+#  save method and save internal method
+#  filename: run assign rules and save to file
+#  save_file();
+sub save_file
+{
+my	$self = shift;
+my	%opts = @_;
+
+my	$used_resource;
+	#check to use resource_list?
+	if (defined $self->{'keep_resource_array'} && $self->{'keep_resource_array'}) {
+		$used_resource = $self->{resource_list};
+	}
+
+	if (!defined $used_resource) {
+		open(DATA,"<$self->{'file'}") or die "Asterisk-config can't read from $self->{file} : $!";
+	my	@DATA = <DATA>;
+		close(DATA);
+		chomp(@DATA);
+		$used_resource = \@DATA;
+	}
+
+	foreach my $one_case (@{$self->{commit_list}}) {
+		$used_resource = &_do_editkey($one_case,$used_resource,$self) if ($one_case->{'action'} eq 'editkey' || $one_case->{'action'} eq 'delkey');
+		$used_resource = &_do_delsection($one_case,$used_resource,$self) if ($one_case->{'action'} eq 'delsection' || $one_case->{'action'} eq 'replacesection');
+		$used_resource = &_do_addsection($one_case,$used_resource,$self) if ($one_case->{'action'} eq 'addsection');
+		$used_resource = &_do_append($one_case,$used_resource,$self) if ($one_case->{'action'} eq 'append');
+		$used_resource = &_do_matchreplace($one_case,$used_resource,$self) if ($one_case->{'action'} eq 'matchreplace');
+		if ($one_case->{'action'} eq 'cleanfile') {
+			undef($used_resource);
+			last;
+		}
+	}
+
+
+	#save file and check new_file
+	if (defined $opts{'new_file'} && $opts{'new_file'} ne '') {
+		open(SAVE,">$opts{'new_file'}") or die "Asterisk-config Save_file can't write : $!";
+	} else {
+		open(SAVE,">$self->{'file'}") or die "Asterisk-config Save_file can't write : $!";
+	}
+	flock(SAVE,LOCK_EX);
+	print SAVE grep{$_.="\n"} @{$used_resource};
+	flock(SAVE,LOCK_UN);
+	close(SAVE);
+
+return();
+}
+
+sub _do_editkey
+{
+my	$one_case = shift;
+my	$data = shift;
+my	$class_self = shift;
+
+my	@NEW;
+my	$last_section_name='[unsection]';
+my	$auto_save=0;
+
+	foreach my $one_line (@$data) {
+
+		#tune on auto save
+		if ($auto_save) {			push(@NEW,$one_line);			next;		}
+
+		my $line_sp=&_clean_string($one_line,$class_self->{comment_flag});
+
+		#income new section
+		if ($line_sp =~ /^\[(.+)\]/) {
+			$last_section_name = $1;
+		} elsif ($last_section_name eq $one_case->{section} & $line_sp =~ /\=/) {
+			#split data and key
+			my ($key,$value)=&_clean_keyvalue($line_sp);
+
+			if ($key eq $one_case->{'key'} && !$one_case->{'value'}) {			#å¤„ç†å…¨éƒ¨åŒ¹é…çš„keyçš„valueå€¼
+				$one_line = "$key=".$one_case->{'new_value'};
+				undef($one_line) if ($one_case->{'action'} eq 'delkey');
+			} elsif ($key eq $one_case->{'key'} && $one_case->{'value'} eq $value) {	#å¤„ç†å”¯ä¸€åŒ¹é…çš„keyçš„valueå€¼
+				$one_line = "$key=".$one_case->{'new_value'};
+				undef($one_line) if ($one_case->{'action'} eq 'delkey');
+				$auto_save = 1;
+			}
+		}
+
+		push(@NEW,$one_line) if ($one_line);
+	}
+
+return(\@NEW);
+}
+
+sub _do_delsection
+{
+my	$one_case = shift;
+my	$data = shift;
+my	$class_self = shift;
+
+my	@NEW;
+my	$last_section_name='[unsection]';
+my	$auto_save=0;
+
+	push(@NEW,&_format_convert($one_case->{'data'})) 
+		if ($one_case->{'section'} eq '[unsection]' and $one_case->{'action'} eq 'replacesection');
+
+	foreach my $one_line (@$data) {
+
+		#tune on auto save
+		if ($auto_save) {			push(@NEW,$one_line);			next;		}
+
+		my $line_sp=&_clean_string($one_line,$class_self->{comment_flag});
+
+		if ($last_section_name eq $one_case->{'section'} & $line_sp =~ /^\[(.+)\]/) {
+			#when end of compared section and come new different section
+			$auto_save = 1;
+		} elsif ($last_section_name eq $one_case->{'section'}) {
+			next;
+		} elsif ($line_sp =~ /^\[(.+)\]/) {
+			#is this new section?
+			if ($one_case->{'section'} eq $1) {
+				$last_section_name = $1;
+				next if ($one_case->{'action'} eq 'delsection');
+				push(@NEW,$one_line);
+				$one_line=&_format_convert($one_case->{'data'});
+			}
+		}
+
+		push(@NEW,$one_line);
+	}
+
+return(\@NEW);
+}
+
+sub _do_addsection
+{
+my	$one_case = shift;
+my	$data = shift;
+my	$class_self = shift;
+
+my	$exists = 0;
+my	$section = '[' . $one_case->{section} . ']';
+	
+	foreach my $one_line(@$data) {
+
+		my $line_sp=&_clean_string($one_line,$class_self->{comment_flag});
+		if($line_sp =~ /^\[.+\]/) {
+
+			if ($section eq $line_sp) {
+				$exists = 1;
+				last;
+			}
+		}
+	}
+	unless($exists) {
+
+		push(@$data, $section);
+	}
+
+return $data;
+}
+
+sub _do_append
+{
+my	$one_case = shift;
+my	$data = shift;
+my	$class_self = shift;
+my	@NEW;
+
+	if ($one_case->{'section'} eq '') {
+	#Append data head of source data/foot of source data
+		if ($one_case->{'point'} eq 'up') {
+			push(@NEW,&_format_convert($one_case->{'data'}),@$data);
+		} else {
+			push(@NEW,@$data,&_format_convert($one_case->{'data'}));
+		}
+
+	} elsif ($one_case->{'comkey'} eq '') {
+	#Append data head/foot of section_name
+	my	$auto_save=0;
+	my	$save_tmpmem=0;
+	my	$offset=0;
+		foreach my $one_line (@$data) {
+			#tune on auto save
+			if ($auto_save) {			push(@NEW,$one_line);			$offset++;	next;		}
+			#check section
+		my	$line_sp=&_clean_string($one_line,$class_self->{comment_flag});
+		my	($section_name) = $line_sp =~ /^\[(.+)\]/;
+
+			# for up / down
+			if ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'up') {
+				push(@NEW,&_format_convert($one_case->{'data'}));	$auto_save=1;
+			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'down') {
+				push(@NEW,$one_line);	$one_line=&_format_convert($one_case->{'data'});		$auto_save=1;
+			# for foot matched section
+			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'foot') {
+				$save_tmpmem=1;
+			# for foot å‘çŽ°è¦ä»ŽåŒ¹é…çš„sectionæ¢æˆæ–°section
+			} elsif ($save_tmpmem == 1 && $section_name && $one_case->{'section'} ne $section_name) {
+				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;	$save_tmpmem=0;
+			# for foot å‘çŽ°åŒ¹é…çš„sectionå·²ç»åˆ°è¾¾æ•´ä¸ªç»“å°¾
+			} 
+			if ($save_tmpmem == 1 && $offset==$#{$data}) {
+				push(@NEW,$one_line);	$one_line=&_format_convert($one_case->{'data'});
+				$auto_save=1;	$save_tmpmem=0;
+			}
+
+			push(@NEW,$one_line);
+			$offset++;
+		}
+
+	} else {
+
+		my $last_section_name='[unsection]';
+		my $auto_save=0;
+		foreach my $one_line (@$data) {
+
+			#tune on auto save
+			if ($auto_save) {			push(@NEW,$one_line);			next;		}
+
+			my $line_sp=&_clean_string($one_line,$class_self->{comment_flag});
+			#income new section
+			if ($line_sp =~ /^\[(.+)\]/) {
+				$last_section_name = $1;
+			} elsif ($last_section_name eq $one_case->{'section'} & $line_sp =~ /\=/) {
+				#split data and key
+				my ($key,$value)=&_clean_keyvalue($line_sp);
+				if ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'up') {
+					push(@NEW,&_format_convert($one_case->{'data'}));	$auto_save=1;
+				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'down') {
+					push(@NEW,$one_line);	$one_line=&_format_convert($one_case->{'data'});
+					$auto_save=1;
+				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'over') {
+					$one_line=&_format_convert($one_case->{'data'});		$auto_save=1;
+				}
+			}
+			push(@NEW,$one_line);
+		}
+
+	}
+
+return(\@NEW);
+}
+
 # income scalar,array ref,hash ref output array data
-sub format_convert {
-	my $string = shift;
+sub _format_convert
+{
+my	$string = shift;
 	if (ref($string) eq 'ARRAY') {
 		return(@$string);
 	} elsif (ref($string) eq 'HASH') {
@@ -170,165 +582,12 @@ sub format_convert {
 	}
 }
 
-##############################
-#  METHOD
-#  clean all assign before
-sub clean_assign {
-	my $self = shift;
-	undef($self->{commit_list});
-#0.6-	undef(@commit_list);
-}
-
-##############################
-#  METHOD
-#  assign_cleanfile ; all data from file
-sub assign_cleanfile {
-	my $self = shift;
-	my %hash = @_;
-	$hash{'action'}='cleanfile';
-	push(@{$self->{commit_list}},\%hash);
-#0.6-	push(@commit_list,\%hash);
-}
-
-##############################
-#  METHOD
-#  replace data when matched
-#  assign_matchreplace(match=>,replace=>);
-sub assign_matchreplace {
-	my $self = shift;
-	my %hash = @_;
-	$hash{'action'}='matchreplace';
-	push(@{$self->{commit_list}},\%hash);
-#0.6-	push(@commit_list,\%hash);
-}
-
-##############################
-#  METHOD
-#  assign append in anywhere
-#  any section: up/down
-#  assign_append(point=>'up'|'down',section=>,data=>[key=value,key=value]|{key=>value,key=>value}|'key=value');
-#  any section&key-value: up/down/over
-#  assign_append(point=>'up'|'down'|'over',section=>,comkey=>[key,value],data=>[key=value,key=value]|{key=>value,key=>value}|'key=value');  
-#  no section:
-#  assign_append(point=>'up'|'down',data=>[key=value,key=value]|{key=>value,key=>value}|'key=value');
-sub assign_append {
-	my $self = shift;
-	my %hash = @_;
-	$hash{'action'}='append';
-	push(@{$self->{commit_list}},\%hash);
-#0.6-	push(@commit_list,\%hash);
-}
-
-##############################
-#  METHOD
-#  replace the section except sharp "#"
-#  any section/[unsection]:
-#  assign_replacesection(section=>,data=>[key=value,key=value]|{key=>value,key=>value}|'key=value');
-sub assign_replacesection {
-	my $self = shift;
-	my %hash = @_;
-	$hash{'action'}='replacesection';
-	push(@{$self->{commit_list}},\%hash);
-#0.6-	push(@commit_list,\%hash);
-}
-
-##############################
-#  METHOD
-#  delete section
-#  any section/[unsection]:
-#  assign_delsection(section=>);
-sub assign_delsection {
-	my $self = shift;
-	my %hash = @_;
-	$hash{'action'}='delsection';
-	push(@{$self->{commit_list}},\%hash);
-#0.6-	push(@commit_list,\%hash);
-}
-
-##############################
-#  METHOD
-#  add section
-#  assign_addsection(section=>sectionname)
-sub assign_addsection {
-
-	my $self = shift;
-	my %hash = @_;
-	$hash{action} = 'addsection';
-	push(@{$self->{commit_list}}, \%hash);
-}
-
-##############################
-#  METHOD
-#  edit key
-#  any section/[unsection]: change all matched key when key value are null.
-#  assign_editkey(section=>,key=>,value=>,new_value=>);
-sub assign_editkey {
-	my $self = shift;
-	my %hash = @_;
-	$hash{'action'}='editkey';
-	push(@{$self->{commit_list}},\%hash);
-#0.6-	push(@commit_list,\%hash);
-}
-
-##############################
-#  METHOD
-#  delete key
-#  any section/[unsection]: change all matched key when key value are null.
-#  assign_delkey(section=>,key=>,$value=>);
-sub assign_delkey {
-	my $self = shift;
-	my %hash = @_;
-	$hash{'action'}='delkey';
-	push(@{$self->{commit_list}},\%hash);
-#0.6-	push(@commit_list,\%hash);
-}
-
-##############################
-#  METHOD
-#  save to file
-#  filename: run assign rules and save to file
-#  save_file(filename=>,resource=>);
-sub save_file {
-	my $self = shift;
-	my %args = @_;
-
-	if (!$args{'resource'}) {
-		open(DATA,"<$args{'filename'}") or die "$!";
-		my @DATA = <DATA>;
-		close(DATA);
-		chomp(@DATA);
-		$args{'resource'}=\@DATA;
-	}
-
-#0.6-	foreach my $one_case (@commit_list) {
-	foreach my $one_case (@{$self->{commit_list}}) {
-		$args{'resource'} = &do_editkey($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'editkey' || $one_case->{'action'} eq 'delkey');
-		$args{'resource'} = &do_delsection($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'delsection' || $one_case->{'action'} eq 'replacesection');
-		$args{'resource'} = &do_addsection($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'addsection');
-		$args{'resource'} = &do_append($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'append');
-		$args{'resource'} = &do_matchreplace($one_case,$args{'resource'}) if ($one_case->{'action'} eq 'matchreplace');
-		if ($one_case->{'action'} eq 'cleanfile') {
-			undef($args{'resource'});
-			last;
-		}
-	}
-
-
-	#save file
-	open(SAVE,">$args{'filename'}") or die ("$!");
-	flock(SAVE,LOCK_EX);
-	print SAVE grep{$_.="\n"} @{$args{'resource'}};
-	flock(SAVE,LOCK_UN);
-	close(SAVE);
-return();
-}
-
-##########################
-# kernel do
-sub do_matchreplace {
-	my $one_case = shift;
-	my $data = shift;
-	my @NEW;
+sub _do_matchreplace
+{
+my	$one_case = shift;
+my	$data = shift;
+my	$class_self = shift;
+my	@NEW;
 
 	foreach my $one_line (@$data) {
 		if ($one_line =~ /$one_case->{'match'}/) {
@@ -340,265 +599,148 @@ sub do_matchreplace {
 return(\@NEW);
 }
 
-sub do_append {
-	my $one_case = shift;
-	my $data = shift;
-	my @NEW;
-
-	if ($one_case->{'section'} eq '') {
-	#Append data head of source data/foot of source data
-		if ($one_case->{'point'} eq 'up') {
-			push(@NEW,&format_convert($one_case->{'data'}),@$data);
-		} else {
-			push(@NEW,@$data,&format_convert($one_case->{'data'}));
-		}
-
-	} elsif ($one_case->{'comkey'} eq '') {
-#0.7-		my $auto_save=0;
-#0.7-		foreach my $one_line (@$data) {
-			#tune on auto save
-#0.7-			if ($auto_save) {			push(@NEW,$one_line);			next;		}
-			#check section
-#0.7-			my $line_sp=&clean_string($one_line);
-#0.7-			my ($section_name) = $line_sp =~ /^\[(.+)\]/;
-#0.7-			if ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'up') {
-#0.7-				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;
-#0.7-			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'down') {
-#0.7-				push(@NEW,$one_line);	push(@NEW,&format_convert($one_case->{'data'}));
-#0.7-				$one_line=undef;		$auto_save=1;
-#0.7-			}
-#0.7-			push(@NEW,$one_line);
-#0.7-		}
-	#Append data head/foot of section_name
-		my $auto_save=0;	my	$save_tmpmem=0;	my	$offset=0;
-		foreach my $one_line (@$data) {
-			#tune on auto save
-			if ($auto_save) {			push(@NEW,$one_line);			$offset++;	next;		}
-			#check section
-			my $line_sp=&clean_string($one_line);			my ($section_name) = $line_sp =~ /^\[(.+)\]/;
-
-			# for up / down
-			if ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'up') {
-				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;
-			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'down') {
-				push(@NEW,$one_line);	$one_line=&format_convert($one_case->{'data'});		$auto_save=1;
-			# for foot ·¢ÏÖÆ¥ÅäµÄsection
-			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'foot') {
-				$save_tmpmem=1;
-			# for foot ·¢ÏÖÒª´ÓÆ¥ÅäµÄsection»»³ÉÐÂsection
-			} elsif ($save_tmpmem == 1 && $section_name && $one_case->{'section'} ne $section_name) {
-				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;	$save_tmpmem=0;
-			# for foot ·¢ÏÖÆ¥ÅäµÄsectionÒÑ¾­µ½´ïÕû¸ö½áÎ²
-			} 
-			if ($save_tmpmem == 1 && $offset==$#{$data}) {
-				push(@NEW,$one_line);	$one_line=&format_convert($one_case->{'data'});
-				$auto_save=1;	$save_tmpmem=0;
-			}
-
-			push(@NEW,$one_line);
-			$offset++;
-		}
-
-	} else {
-
-		my $last_section_name='[unsection]';	#µ±Ç°ÊÇÄ¬ÈÏµÄsection
-		my $auto_save=0;
-		foreach my $one_line (@$data) {
-
-			#tune on auto save
-			if ($auto_save) {			push(@NEW,$one_line);			next;		}
-
-			my $line_sp=&clean_string($one_line);
-			#¼ì²éµ±Ç°ÊÇ²»ÊÇ½øÈëÁËÐÂµÄsection
-			if ($line_sp =~ /^\[(.+)\]/) {
-				$last_section_name = $1;
-			} elsif ($last_section_name eq $one_case->{'section'} & $line_sp =~ /\=/) {
-				#split data and key
-				my ($key,$value)=&clean_keyvalue($line_sp);
-				if ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'up') {
-					push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;
-				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'down') {
-#0.7-					push(@NEW,$one_line);	push(@NEW,&format_convert($one_case->{'data'}));
-#0.7-					$one_line=undef;		$auto_save=1;
-					push(@NEW,$one_line);	$one_line=&format_convert($one_case->{'data'});
-					$auto_save=1;
-				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'over') {
-#0.7-					push(@NEW,&format_convert($one_case->{'data'}));
-#0.7-					$one_line=undef;		$auto_save=1;
-					$one_line=&format_convert($one_case->{'data'});		$auto_save=1;
-				}
-			}
-			push(@NEW,$one_line) #0.7-	if ($one_line);
-		}
-
-	}
-
-return(\@NEW);
-}
-
-sub do_delsection {
-	my $one_case = shift;
-	my $data = shift;
-	my @NEW;
-	my $last_section_name='[unsection]';	#µ±Ç°ÊÇÄ¬ÈÏµÄsection
-	my $auto_save=0;
-
-	push(@NEW,&format_convert($one_case->{'data'})) if ($one_case->{'section'} eq '[unsection]' and $one_case->{'action'} eq 'replacesection');
-
-	foreach my $one_line (@$data) {
-
-		#tune on auto save
-		if ($auto_save) {			push(@NEW,$one_line);			next;		}
-
-		my $line_sp=&clean_string($one_line);
-
-		if ($last_section_name eq $one_case->{'section'} & $line_sp =~ /^\[(.+)\]/) {
-			#when end of compared section and come new different section
-			$auto_save = 1;
-		} elsif ($last_section_name eq $one_case->{'section'}) {
-			next;
-		} elsif ($line_sp =~ /^\[(.+)\]/) {
-			#is this new section?
-			if ($one_case->{'section'} eq $1) {
-				$last_section_name = $1;
-				next if ($one_case->{'action'} eq 'delsection');
-				push(@NEW,$one_line);
-#0.7-				push(@NEW,&format_convert($one_case->{'data'}));
-#0.7-				$one_line=undef;
-				$one_line=&format_convert($one_case->{'data'});
-			}
-		}
-
-		push(@NEW,$one_line);
-	}
-
-return(\@NEW);
-}
-
-sub do_addsection {
-
-	my $one_case = shift;
-	my $data = shift;
-	my $exists = 0;
-	my $section = '[' . $one_case->{section} . ']';
-	
-	foreach my $one_line(@$data) {
-
-		my $line_sp=&clean_string($one_line);
-		if($line_sp =~ /^\[.+\]/) {
-
-			if ($section eq $line_sp) {
-				$exists = 1;
-				last;
-			}
-		}
-	}
-	unless($exists) {
-
-		push(@$data, $section);
-	}
-	return $data;
-}
-
-sub do_editkey {
-	my $one_case = shift;
-	my $data = shift;
-	my @NEW;
-	my $last_section_name='[unsection]';	#µ±Ç°ÊÇÄ¬ÈÏµÄsection
-	my $auto_save=0;
-	foreach my $one_line (@$data) {
-
-		#tune on auto save
-		if ($auto_save) {			push(@NEW,$one_line);			next;		}
-
-		my $line_sp=&clean_string($one_line);
-
-		#¼ì²éµ±Ç°ÊÇ²»ÊÇ½øÈëÁËÐÂµÄsection
-		if ($line_sp =~ /^\[(.+)\]/) {
-			$last_section_name = $1;
-		} elsif ($last_section_name eq $one_case->{section} & $line_sp =~ /\=/) {
-			#split data and key
-			my ($key,$value)=&clean_keyvalue($line_sp);
-
-			if ($key eq $one_case->{'key'} && !$one_case->{'value'}) {			#´¦ÀíÈ«²¿Æ¥ÅäµÄkeyµÄvalueÖµ
-				$one_line = "$key=".$one_case->{'new_value'};
-				undef($one_line) if ($one_case->{'action'} eq 'delkey');
-			} elsif ($key eq $one_case->{'key'} && $one_case->{'value'} eq $value) {	#´¦ÀíÎ¨Ò»Æ¥ÅäµÄkeyµÄvalueÖµ
-				$one_line = "$key=".$one_case->{'new_value'};
-				undef($one_line) if ($one_case->{'action'} eq 'delkey');
-				$auto_save = 1;
-			}
-		}
-
-		push(@NEW,$one_line) if ($one_line);
-	}
-
-return(\@NEW);
-}
-
 =head1 NAME
 
 Asterisk::config - the Asterisk config read and write module.
 
 =head1 SYNOPSIS
 
-	use Asterisk::config;
+    use Asterisk::config;
 
-	my $rc = new Asterisk::config;
-	my ($cfg,$res) = $rc->load_config(filename=>[configfile],stream_data=>[strings]);
+    my $sip_conf = new Asterisk::config(file=>'/etc/asterisk/sip.conf');
+    my $conference = new Asterisk::config(file=>'/etc/asterisk/meetme.conf',
+                                              keep_resource_array=>0);
 
-	print $cfg->{'[unsection]'}{'test'}[0];
+    $allow = $sip_conf->fetch_values_arrayref(section=>'general',key=>'allow');
+    print $allow->[0];
 
-	print $cfg->{'[global]'}{'allow'}[1];
+    $sip_conf->assign_append(point=>'down',data=>"[userb]\ntype=friend\n");
 
-	$rc->assign_append(point=>'down',data=>$user_data);
-
-	$rc->save_file(filename=>[filename],resource=>$res);
-
+    $sip_conf->save();
 
 
 =head1 DESCRIPTION
 
-Asterisk::config know how Asterisk config difference with 
-standard ini config. this moudle make interface for read and
-write Asterisk config files and Asterisk extension configs.
+Asterisk::config can parse and saving data with Asterisk config
+files. this module support asterisk 1.0 1.2 1.4 1.6, and it also
+support Zaptel config files.
 
-=head1 NOTE
+=head1 Note
 
-please use = instand of => in your config files.
+Version 0.9 syntax incompitable with 0.8.
 
-=head1 METHOD
+=head1 CLASS METHOD
 
 =head2 new
 
-	my $rc = new Asterisk::config;
+    $sip_conf = new Asterisk::config(file=>'file name',
+                                     [stream_data=>$string],
+                                     [object variable]);
 
-Instantiates a new object.
+Instantiates a new object of file. read data from stream_data or
+file.
 
-=head2 load_config
 
-	$rc->(filename=>[configfile],stream_data=>[strings]);
+=head1 OBJECT VARIABLE
 
-load config from file or from stream data.
+=head2 file
 
-=over 2
+config file name and path.
+if file no exists (exp. data from stream_data ) you can't
+saving by C<save_file>.
 
-=item * configfile -> config file path and name.
+=head2 keep_resource_array
 
-=item * stream_data -> instead of C<filename>, data from 
-strings.
+use resource array when save make fast than open file, but need
+more memory, default enabled. use set_objvar to change it.
 
-=back
+=head2 reload_when_save
+
+when save done, auto call .
+
+default enable. use set_variable to change it.
+
+=head2 clean_when_reload
+
+when reload done, auto clean_assign with current object.
+default enable. use set_objvar to change it.
+
+=head2 commit_list
+
+internal variable listed all command. 
+i suggest don't modify and change this variable.
+
+=head2 parsed_conf
+
+internal variable of parsed. 
+i suggest don't modify and change this variable.
+
+
+=head1 OBJECT READ METHOD
+
+=head2 get_objvar
+
+    $sip_conf->get_objvar(var_name);
+
+return defined object variables.
+
+=head2 fetch_sections_list
+
+    $sip_conf->fetch_sections_list();
+
+only return sections name list. does not include 'unsection'.
+
+=head2 fetch_sections_hashref
+
+    $sip_conf->fetch_sections_hashref();
+
+this function return parsed config files data.
+
+=head2 fetch_keys_list
+
+    $sip_conf->fetch_keys_list(section=>[section name|unsection]);
+
+return keys list of section name or unsection.
+
+=head2 fetch_keys_hashref
+
+    $sip_conf->fetch_keys_hashref(section=>[section name|unsection]);
+
+return referenced key list (and keys value), section value 'unsection'
+return all unsection keys, if section name unreachable return failed.
+
+=head2 fetch_values_arrayref
+
+    $sip_conf->fetch_values_arrayref(section=>[section name|unsection],
+                                     key=>key name);
+
+return referenced value list, if section name unreachable return 
+failed. if key name unreachable return failed.
+
+=head2 reload
+
+    $sip_conf->reload();
+
+reload and parse config file.
+if clean_when_reload true will do clean_assign.
+
+=head1 OBJECT WRITE METHOD
+
+=head2 set_objvar
+
+    $sip_conf->set_objvar('var_name'=>'value');
+
+set the object variables to new value.
 
 =head2 assign_cleanfile
 
-	$rc->assign_cleanfile();
-	
-be sure clean all data from current file.
+    $sip_conf->assign_cleanfile();
+
+assign clean all to file.
 
 =head2 assign_matchreplace
 
-	$rc->assign_matchreplace(match=>,replace=>);
+    $sip_conf->assign_matchreplace(match=>[string],replace=>[string]);
 
 replace new data when matched.
 
@@ -606,16 +748,15 @@ replace new data when matched.
 
 =item * match -> string of matched data.
 
-=item * replace -> new data.
+=item * replace -> new data string.
 
 =back
 
 =head2 assign_append
 
-	$rc->assign_append(point=>['up'|'down'|'foot'],
-		section=>[section],
-		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
-		);
+    $sip_conf->assign_append(point=>['up'|'down'|'foot'],
+                             section=>[section name],
+                             data=>'key=value'|['key=value','key=value']|{key=>'value',key=>'value'});
 
 append data around with section name.
 
@@ -623,17 +764,16 @@ append data around with section name.
 
 =item * point -> append data C<up> / C<down> / C<foot> with section.
 
-=item * section -> matched section name, except [unsection].
+=item * section -> matched section name, expect 'unsection'.
 
 =item * data -> new replace data in string/array/hash.
 
 =back
 
-	$rc->assign_append(point=>['up'|'down'|'over'],
-		section=>[section],
-		comkey=>[key,value],
-		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
-		);
+    $sip_conf->assign_append(point=>['up'|'down'|'over'],
+                             section=>[section name],
+                             comkey=>[key,value],
+                             data=>'key=value'|['key=value','key=value']|{key=>'value',key=>'value'};
 
 append data around with section name and key/value in same section.
 
@@ -645,41 +785,39 @@ append data around with section name and key/value in same section.
 
 =back
 
-	$rc->assign_append(point=>'up'|'down',
-		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
-		);
+    $sip_conf->assign_append(point=>'up'|'down',
+                             data=>'key=value'|['key=value','key=value']|{key=>'value',key=>'value'});
 
 simple append data without any section.
 
 =head2 assign_replacesection
 
-	$rc->assign_replacesection(section=>[section],
-		data=>[key=value,key=value]|{key=>value,key=>value}|'key=value'
-		);
+    $sip_conf->assign_replacesection(section=>[section name|unsection],
+                             data=>'key=value'|['key=value','key=value']|{key=>'value',key=>'value'});
 
-replace the section body data,except "#" in body.
+replace the section body data.
 
 =over 1
 
-=item * section -> all section and [unsection].
+=item * section -> all section name and 'unsection'.
 
 =back
 
 =head2 assign_delsection
 
-	$rc->assign_delsection(section=>[section]);
+    $sip_conf->assign_delsection(section=>[section name|unsection]);
 
 erase section name and section data.
 
 =over 1
 
-=item * section -> all section and [unsection].
+=item * section -> all section and 'unsection'.
 
 =back
 
 =head2 assign_addsection
 
-	$rc->assign_addsection(section=>[section]);
+    $sip_conf->assign_addsection(section=>[section]);
 
 add section with name.
 
@@ -691,65 +829,61 @@ add section with name.
 
 =head2 assign_editkey
 
-	$rc->assign_editkey(section=>[section],key=>[keyname],value=>[value],new_value=>[new_value]);
+    $sip_conf->assign_editkey(section=>[section name|unsection],key=>[keyname],value=>[value],new_value=>[new_value]);
 
 modify value with matched section.if don't assign value=> will replace all matched key. 
 
-exp script:
+warnning example script:
 
-	$rc->assign_editkey(section=>'990001',key=>'all',new_value=>'gsm');
+    $sip_conf->assign_editkey(section=>'990001',key=>'all',new_value=>'gsm');
 
 data:
 
-	all=g711
-	all=ilbc
+    all=g711
+    all=ilbc
 
 will convert to:
 
-	all=gsm
-	all=gsm
+    all=gsm
+    all=gsm
 
 
 =head2 assign_delkey
 
-	$rc->assign_delkey(section=>[section],key=>[keyname],value=>[value]);
+    $sip_conf->assign_delkey(section=>[section name|unsection],key=>[keyname],value=>[value]);
 
-erase all matched C<keyname> in section or in [unsection].
+erase all matched C<keyname> in section or in 'unsection'.
 
 =head2 save_file
 
-	$rc->save_file(filename=>[filename],resource=>[resource]);
+    $sip_conf->save_file([new_file=>'filename']);
 
-process assign rules and save to file.
-
-=over 2
-
-=item * filename -> save to file name.
-
-=item * resource -> instand of filename must resource return load_config or
-file handle.
-
-=back
+process commit list and save to file.
+if reload_when_save true will do reload.
+if no object variable file or file not exists or can't be 
+save return failed.
+if defined new_file will save to new file, default overwrite
+objvar 'file'.
 
 =head2 clean_assign
 
-	$rc->clean_assign();
+    $sip_conf->clean_assign();
 
 clean all assign rules.
 
 =head1 EXAMPLES
 
-be come soon...
+see example in source tree.
 
 =head1 AUTHORS
 
-Asterisk::config by hoowa sun.
+Asterisk::config by Sun bing <hoowa.sun@gmail.com>
 
 Version 0.7 patch by Liu Hailong.
 
 =head1 COPYRIGHT
 
-The Asterisk::config module is Copyright (c) 2005-2006 hoowa sun. P.R.China.
+The Asterisk::config module is Copyright (c) Sun bing <hoowa.sun@gmail.com>
 All rights reserved.
 
 You may distribute under the terms of either the GNU General Public
@@ -763,11 +897,10 @@ IT COMES WITHOUT WARRANTY OF ANY KIND.
 
 =head1 SUPPORT
 
-Email(Chinese & English) hoowa.sun@gmail.com
+Sun bing <hoowa.sun@gmail.com>
 
-Chinese OpenPBX technology Forum http://www.openpbx.cn
-
-Chinese Perl Forum http://bbs.perlchina.org
+The Asterisk::config be Part of FreeIris opensource Telephony Project
+Access http://www.freeiris.org for more details.
 
 =cut
 

@@ -3,3 +3,10 @@ MANIFEST			This list of files
 Makefile.PL
 README
 config.pm
+example/test1.pl
+example/test2.pl
+example/test3.pl
+example/test4.pl
+example/test5.pl
+example/sip.conf
+example/new.conf
