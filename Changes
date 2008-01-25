@@ -1,3 +1,6 @@
+0.91 2008-1-25
+	- fix some warnnings syntax.
+
 0.9 2008-1-23
 	- changed object syntax.
 	- add function get_objvar

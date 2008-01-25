@@ -15,7 +15,7 @@ package Asterisk::config;
 #
 #
 #--------------------------------------------------------------
-$Asterisk::config::VERSION='0.9';
+$Asterisk::config::VERSION='0.91';
 
 use strict;
 use Fcntl ':flock';
@@ -394,21 +394,26 @@ my	$auto_save=0;
 		#income new section
 		if ($line_sp =~ /^\[(.+)\]/) {
 			$last_section_name = $1;
-		} elsif ($last_section_name eq $one_case->{section} & $line_sp =~ /\=/) {
+		} elsif ($last_section_name eq $one_case->{section} && $line_sp =~ /\=/) {
+
 			#split data and key
 			my ($key,$value)=&_clean_keyvalue($line_sp);
 
 			if ($key eq $one_case->{'key'} && !$one_case->{'value'}) {			#处理全部匹配的key的value值
-				$one_line = "$key=".$one_case->{'new_value'};
-				undef($one_line) if ($one_case->{'action'} eq 'delkey');
+				if ($one_case->{'action'} eq 'delkey') {	undef($one_line);	}
+				else {	$one_line = "$key=".$one_case->{'new_value'};	}
+#				$one_line = "$key=".$one_case->{'new_value'};
+#				undef($one_line) if ($one_case->{'action'} eq 'delkey');
 			} elsif ($key eq $one_case->{'key'} && $one_case->{'value'} eq $value) {	#处理唯一匹配的key的value值
-				$one_line = "$key=".$one_case->{'new_value'};
-				undef($one_line) if ($one_case->{'action'} eq 'delkey');
+				if ($one_case->{'action'} eq 'delkey') {	undef($one_line);	}
+				else {	$one_line = "$key=".$one_case->{'new_value'};	}
+#				$one_line = "$key=".$one_case->{'new_value'};
+#				undef($one_line) if ($one_case->{'action'} eq 'delkey');
 				$auto_save = 1;
 			}
 		}
 
-		push(@NEW,$one_line) if ($one_line);
+		push(@NEW,$one_line) if (defined $one_line);
 	}
 
 return(\@NEW);
@@ -434,7 +439,7 @@ my	$auto_save=0;
 
 		my $line_sp=&_clean_string($one_line,$class_self->{comment_flag});
 
-		if ($last_section_name eq $one_case->{'section'} & $line_sp =~ /^\[(.+)\]/) {
+		if ($last_section_name eq $one_case->{'section'} && $line_sp =~ /^\[(.+)\]/) {
 			#when end of compared section and come new different section
 			$auto_save = 1;
 		} elsif ($last_section_name eq $one_case->{'section'}) {
@@ -498,7 +503,7 @@ my	@NEW;
 			push(@NEW,@$data,&_format_convert($one_case->{'data'}));
 		}
 
-	} elsif ($one_case->{'comkey'} eq '') {
+	} elsif (!defined $one_case->{'comkey'} || $one_case->{'comkey'} eq '') {
 	#Append data head/foot of section_name
 	my	$auto_save=0;
 	my	$save_tmpmem=0;
@@ -511,12 +516,12 @@ my	@NEW;
 		my	($section_name) = $line_sp =~ /^\[(.+)\]/;
 
 			# for up / down
-			if ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'up') {
+			if (defined $section_name && $one_case->{'section'} eq $section_name && $one_case->{'point'} eq 'up') {
 				push(@NEW,&_format_convert($one_case->{'data'}));	$auto_save=1;
-			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'down') {
+			} elsif (defined $section_name && $one_case->{'section'} eq $section_name && $one_case->{'point'} eq 'down') {
 				push(@NEW,$one_line);	$one_line=&_format_convert($one_case->{'data'});		$auto_save=1;
 			# for foot matched section
-			} elsif ($one_case->{'section'} eq $section_name & $one_case->{'point'} eq 'foot') {
+			} elsif (defined $section_name && $one_case->{'section'} eq $section_name && $one_case->{'point'} eq 'foot') {
 				$save_tmpmem=1;
 			# for foot 发现要从匹配的section换成新section
 			} elsif ($save_tmpmem == 1 && $section_name && $one_case->{'section'} ne $section_name) {
@@ -545,15 +550,15 @@ my	@NEW;
 			#income new section
 			if ($line_sp =~ /^\[(.+)\]/) {
 				$last_section_name = $1;
-			} elsif ($last_section_name eq $one_case->{'section'} & $line_sp =~ /\=/) {
+			} elsif ($last_section_name eq $one_case->{'section'} && $line_sp =~ /\=/) {
 				#split data and key
 				my ($key,$value)=&_clean_keyvalue($line_sp);
-				if ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'up') {
+				if ($key eq $one_case->{comkey}[0] && $value eq $one_case->{comkey}[1] && $one_case->{'point'} eq 'up') {
 					push(@NEW,&_format_convert($one_case->{'data'}));	$auto_save=1;
-				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'down') {
+				} elsif ($key eq $one_case->{comkey}[0] && $value eq $one_case->{comkey}[1] && $one_case->{'point'} eq 'down') {
 					push(@NEW,$one_line);	$one_line=&_format_convert($one_case->{'data'});
 					$auto_save=1;
-				} elsif ($key eq $one_case->{comkey}[0] & $value eq $one_case->{comkey}[1] & $one_case->{'point'} eq 'over') {
+				} elsif ($key eq $one_case->{comkey}[0] && $value eq $one_case->{comkey}[1] && $one_case->{'point'} eq 'over') {
 					$one_line=&_format_convert($one_case->{'data'});		$auto_save=1;
 				}
 			}
