@@ -15,7 +15,7 @@ package Asterisk::config;
 #
 #
 #--------------------------------------------------------------
-$Asterisk::config::VERSION='0.91';
+$Asterisk::config::VERSION='0.92';
 
 use strict;
 use Fcntl ':flock';

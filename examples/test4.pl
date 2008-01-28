@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 use Data::Dumper;
-require "../config.pm";
+use lib '../lib';
+use Asterisk::config;
 
 my $rc = new Asterisk::config(file=>'sip.conf');
 
