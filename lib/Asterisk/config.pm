@@ -15,7 +15,7 @@ package Asterisk::config;
 #
 #
 #--------------------------------------------------------------
-$Asterisk::config::VERSION='0.92';
+$Asterisk::config::VERSION='0.93';
 
 use strict;
 use Fcntl ':flock';
@@ -399,7 +399,11 @@ my	$auto_save=0;
 			#split data and key
 			my ($key,$value)=&_clean_keyvalue($line_sp);
 
-			if ($key eq $one_case->{'key'} && !$one_case->{'value'}) {			#处理全部匹配的key的value值
+			if ($key eq $one_case->{'key'} && $one_case->{'value_regexp'} && !$one_case->{'value'}) {
+				$value =~ /(.+?)\,/;
+				if ($one_case->{'action'} eq 'delkey' && $1 eq $one_case->{'value_regexp'}){	undef($one_line);	}
+
+			} elsif ($key eq $one_case->{'key'} && !$one_case->{'value'}) {			#处理全部匹配的key的value值
 				if ($one_case->{'action'} eq 'delkey') {	undef($one_line);	}
 				else {	$one_line = "$key=".$one_case->{'new_value'};	}
 #				$one_line = "$key=".$one_case->{'new_value'};
@@ -858,6 +862,13 @@ will convert to:
     $sip_conf->assign_delkey(section=>[section name|unsection],key=>[keyname],value=>[value]);
 
 erase all matched C<keyname> in section or in 'unsection'.
+
+    $sip_conf->assign_delkey(section=>[section name|unsection],key=>[keyname],value_regexp=>[exten_number]);
+
+erase when matched exten number.
+
+	exten => 100,n,...
+	exten => 102,n,...
 
 =head2 save_file
 

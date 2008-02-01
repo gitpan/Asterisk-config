@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Asterisk-config
-version:             0.92
+version:             0.93
 abstract:            The Asterisk config read and write module.
 license:             gpl
 author:              
