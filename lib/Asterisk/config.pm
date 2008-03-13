@@ -15,7 +15,7 @@ package Asterisk::config;
 #
 #
 #--------------------------------------------------------------
-$Asterisk::config::VERSION='0.93';
+$Asterisk::config::VERSION='0.94';
 
 use strict;
 use Fcntl ':flock';
@@ -241,7 +241,8 @@ return(1);
 sub clean_assign
 {
 my	$self = shift;
-	undef($self->{commit_list});
+#	undef($self->{commit_list});
+	$self->{commit_list}=[];
 return(1);
 }
 
@@ -336,7 +337,8 @@ my	%opts = @_;
 my	$used_resource;
 	#check to use resource_list?
 	if (defined $self->{'keep_resource_array'} && $self->{'keep_resource_array'}) {
-		$used_resource = $self->{resource_list};
+#		$used_resource = $self->{resource_list};
+		$used_resource = [ @{ $self->{resource_list} } ];
 	}
 
 	if (!defined $used_resource) {
@@ -370,6 +372,11 @@ my	$used_resource;
 	print SAVE grep{$_.="\n"} @{$used_resource};
 	flock(SAVE,LOCK_UN);
 	close(SAVE);
+
+	#reload when save
+	if (defined $self->{'reload_when_save'} && $self->{'reload_when_save'}) {
+		&reload($self);
+	}
 
 return();
 }
