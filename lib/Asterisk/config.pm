@@ -15,7 +15,7 @@ package Asterisk::config;
 #
 #
 #--------------------------------------------------------------
-$Asterisk::config::VERSION='0.94';
+$Asterisk::config::VERSION='0.95';
 
 use strict;
 use Fcntl ':flock';
@@ -25,7 +25,7 @@ use Fcntl ':flock';
 sub new {
 my	$class = shift;
 my	%args = @_;
-my	(@resource_list,$resource_list,$parsed_conf,$comment_flag);
+my	(@resource_list,$resource_list,$parsed_conf,$parsed_section_chunk,$comment_flag);
 
 	#try read
 	return(0) if (!defined $args{file});
@@ -40,7 +40,7 @@ my	(@resource_list,$resource_list,$parsed_conf,$comment_flag);
 	chomp(@resource_list);
 	#try parse
 	$comment_flag = '\;|\#';
-	$parsed_conf = &_parse(\@resource_list,$comment_flag);
+	($parsed_conf,$parsed_section_chunk) = &_parse(\@resource_list,$comment_flag,$args{'section_chunk'});
 
 	#try define default variable
 	$args{'keep_resource_array'} = 1 if (!defined $args{'keep_resource_array'});
@@ -64,6 +64,7 @@ my	$self = {
 		#internal
 		commit_list => [],
 		parsed_conf=> $parsed_conf,
+		parsed_section_chunk=> $parsed_section_chunk,
 		resource_list=> $resource_list,
 		comment_flag=> $comment_flag,
 	};
@@ -77,29 +78,40 @@ my	$self = {
 sub _parse {
 my	$resource_list = $_[0];
 my	$comment_flag = $_[1];
+my	$section_chunk = $_[2];
 
-my (%DATA,$last_section_name);
-	$DATA{'[unsection]'}={};
+my (%DATA,$last_section_name,%DATA_CHUNK);
+	$DATA{'[unsection]'}={};	$DATA_CHUNK{'[unsection]'}={} if ($section_chunk);
 	foreach my $one_line (@$resource_list) {
 	my	$line_sp=&_clean_string($one_line,$comment_flag);
-		next if ($line_sp eq '');#next if just comment
 
-		#right [section]???
+		#format : Find New Section ???
 		if ($line_sp =~ /^\[(.+)\]/) {
-			$DATA{$1}={};			$last_section_name = $1;			next;
+			$DATA{$1}={};			$last_section_name = $1;
+			$DATA_CHUNK{$1}=[] if ($section_chunk);
+			next;
+
+		#save source chunk to data_chunk
+		} elsif ($section_chunk) {
+			next if ($one_line eq '');
+		my	$section_name = $last_section_name;
+			$section_name = '[unsection]' if (!$section_name);
+			#copying source chunk to data_chunk
+			push(@{$DATA_CHUNK{$section_name}},$one_line);
 		}
 
-		#right sharp "#" ???
+		next if ($line_sp eq '');#next if just comment
+
+		#fromat : Include "#" ???
 		if ($line_sp =~ /^\#/) {
 		my	$section_name = $last_section_name;
 			$section_name = '[unsection]' if (!$section_name);
 			$DATA{$section_name}{$line_sp}=[] if (!$DATA{$section_name}{$line_sp});
-
 			push(@{$DATA{$section_name}{$line_sp}},$line_sp);
 			next;
 		}
 
-		#right key/value???
+		#format : Key=Value ???
 		if ($line_sp =~ /\=/) {
 			#split data and key
 		my	($key,$value)=&_clean_keyvalue($line_sp);
@@ -112,7 +124,7 @@ my (%DATA,$last_section_name);
 		}
 	}
 
-return(\%DATA);
+return(\%DATA,\%DATA_CHUNK);
 }
 
 ##############################
