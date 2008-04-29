@@ -1,3 +1,6 @@
+0.96 2008-4-29
+	- error name _format_convert in _do_append
+	- add return when not commit list on save_file
 0.95 2008-3-19
 	- add variable $object->{parsed_section_chunk}
 0.94 2008-3-11

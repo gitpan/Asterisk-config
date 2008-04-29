@@ -15,7 +15,7 @@ package Asterisk::config;
 #
 #
 #--------------------------------------------------------------
-$Asterisk::config::VERSION='0.95';
+$Asterisk::config::VERSION='0.96';
 
 use strict;
 use Fcntl ':flock';
@@ -346,6 +346,8 @@ sub save_file
 my	$self = shift;
 my	%opts = @_;
 
+	return if ($#{$self->{commit_list}} < 0);
+
 my	$used_resource;
 	#check to use resource_list?
 	if (defined $self->{'keep_resource_array'} && $self->{'keep_resource_array'}) {
@@ -548,7 +550,7 @@ my	@NEW;
 				$save_tmpmem=1;
 			# for foot 发现要从匹配的section换成新section
 			} elsif ($save_tmpmem == 1 && $section_name && $one_case->{'section'} ne $section_name) {
-				push(@NEW,&format_convert($one_case->{'data'}));	$auto_save=1;	$save_tmpmem=0;
+				push(@NEW,&_format_convert($one_case->{'data'}));	$auto_save=1;	$save_tmpmem=0;
 			# for foot 发现匹配的section已经到达整个结尾
 			} 
 			if ($save_tmpmem == 1 && $offset==$#{$data}) {
