@@ -14,5 +14,8 @@ Makefile.PL
 MANIFEST			This list of files
 README
 t/read.t
+t/array_hash.t
 t/test.conf
 META.yml                                 Module meta-data (added by MakeMaker)
+examples/Asteriskgui.pm		Example asterisk-gui DAHDI configuration generator
+examples/Asteriskgui.txt	Help text for Asteriskgui.pm

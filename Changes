@@ -1,3 +1,7 @@
+0.97 2009-5-31
+	- Fix handling of hash/array values in _do_append().
+	- Fix truncation of data on _parse() on some cases.
+	- Documentation fixes.
 0.96 2008-4-29
 	- error name _format_convert in _do_append
 	- add return when not commit list on save_file

@@ -15,7 +15,7 @@ package Asterisk::config;
 #
 #
 #--------------------------------------------------------------
-$Asterisk::config::VERSION='0.96';
+$Asterisk::config::VERSION='0.97';
 
 use strict;
 use Fcntl ':flock';
@@ -228,7 +228,7 @@ my	@resource_list = <DATA>;
 	chomp(@resource_list);
 
 	# save to parsed_conf
-my	$parsed_conf = &_parse(\@resource_list,$self->{comment_flag});
+my	($parsed_conf,$conf_chunk_ignored) = &_parse(\@resource_list,$self->{comment_flag});
 	$self->{parsed_conf} = $parsed_conf;
 
 	# save to resource_list
@@ -520,7 +520,7 @@ my	$data = shift;
 my	$class_self = shift;
 my	@NEW;
 
-	if ($one_case->{'section'} eq '') {
+	if ((not exists $one_case->{'section'}) || ($one_case->{'section'} eq '')) {
 	#Append data head of source data/foot of source data
 		if ($one_case->{'point'} eq 'up') {
 			push(@NEW,&_format_convert($one_case->{'data'}),@$data);
@@ -544,7 +544,7 @@ my	@NEW;
 			if (defined $section_name && $one_case->{'section'} eq $section_name && $one_case->{'point'} eq 'up') {
 				push(@NEW,&_format_convert($one_case->{'data'}));	$auto_save=1;
 			} elsif (defined $section_name && $one_case->{'section'} eq $section_name && $one_case->{'point'} eq 'down') {
-				push(@NEW,$one_line);	$one_line=&_format_convert($one_case->{'data'});		$auto_save=1;
+				push(@NEW,$one_line);	$one_line = join "\n", &_format_convert($one_case->{'data'});		$auto_save=1;
 			# for foot matched section
 			} elsif (defined $section_name && $one_case->{'section'} eq $section_name && $one_case->{'point'} eq 'foot') {
 				$save_tmpmem=1;
@@ -554,7 +554,7 @@ my	@NEW;
 			# for foot 发现匹配的section已经到达整个结尾
 			} 
 			if ($save_tmpmem == 1 && $offset==$#{$data}) {
-				push(@NEW,$one_line);	$one_line=&_format_convert($one_case->{'data'});
+				push(@NEW,$one_line);	$one_line = join "\n", &_format_convert($one_case->{'data'});
 				$auto_save=1;	$save_tmpmem=0;
 			}
 
@@ -667,17 +667,20 @@ Version 0.9 syntax incompitable with 0.8.
                                      [stream_data=>$string],
                                      [object variable]);
 
-Instantiates a new object of file. read data from stream_data or
+Instantiates a new object of file. Reads data from stream_data or
 file.
 
 
-=head1 OBJECT VARIABLE
+=head1 OBJECT VARIABLES
+
+FIXME: should all of those be documented in the POD (rather than
+in comments in the code?)
 
 =head2 file
 
-config file name and path.
-if file no exists (exp. data from stream_data ) you can't
-saving by C<save_file>.
+Config file name and path. Must be set.
+If file does exists (exp. data from C<stream_data>), you will not
+be able to save using L<save_file>.
 
 =head2 keep_resource_array
 
@@ -686,24 +689,25 @@ more memory, default enabled. use set_objvar to change it.
 
 =head2 reload_when_save
 
-when save done, auto call .
+When save done, auto call .
 
-default enable. use set_variable to change it.
+Enabled by default. Use set_variable to change it.
+
+FIXME: what is C<set_variable>?
 
 =head2 clean_when_reload
 
-when reload done, auto clean_assign with current object.
-default enable. use set_objvar to change it.
+When reload done, auto clean_assign with current object.
+
+Enabled by default. Use L<set_objvar> to change it.
 
 =head2 commit_list
 
-internal variable listed all command. 
-i suggest don't modify and change this variable.
+Internal variable listed all command. 
 
 =head2 parsed_conf
 
-internal variable of parsed. 
-i suggest don't modify and change this variable.
+Internal variable of parsed. 
 
 
 =head1 OBJECT READ METHOD
@@ -712,47 +716,50 @@ i suggest don't modify and change this variable.
 
     $sip_conf->get_objvar(var_name);
 
-return defined object variables.
+Return defined object variables.
 
 =head2 fetch_sections_list
 
     $sip_conf->fetch_sections_list();
 
-only return sections name list. does not include 'unsection'.
+List of sections (not including C<unsection>) in a file.
 
 =head2 fetch_sections_hashref
 
     $sip_conf->fetch_sections_hashref();
 
-this function return parsed config files data.
+Returns the config file parsed as a hash (section name -> section)
+of lists (list of lines).
 
 =head2 fetch_keys_list
 
     $sip_conf->fetch_keys_list(section=>[section name|unsection]);
 
-return keys list of section name or unsection.
+Returns list of the kes in the keys in I<section name> (or
+I<unsection>).
 
 =head2 fetch_keys_hashref
 
     $sip_conf->fetch_keys_hashref(section=>[section name|unsection]);
 
-return referenced key list (and keys value), section value 'unsection'
-return all unsection keys, if section name unreachable return failed.
+Returns the section as a hash of key=>value pairs.
 
 =head2 fetch_values_arrayref
 
     $sip_conf->fetch_values_arrayref(section=>[section name|unsection],
                                      key=>key name);
 
-return referenced value list, if section name unreachable return 
-failed. if key name unreachable return failed.
+Returns a (reference to a) list of all the values a specific keys have
+in a specific section. referenced value list, Returns 0 if section
+was not found or key was not found in the section.
 
 =head2 reload
 
     $sip_conf->reload();
 
-reload and parse config file.
-if clean_when_reload true will do clean_assign.
+Reloads and parses the config file.
+
+If L<clean_when_reload> is true, will also do L<clean_assign>.
 
 =head1 OBJECT WRITE METHOD
 
@@ -760,13 +767,13 @@ if clean_when_reload true will do clean_assign.
 
     $sip_conf->set_objvar('var_name'=>'value');
 
-set the object variables to new value.
+Set the object variables to new value.
 
 =head2 assign_cleanfile
 
     $sip_conf->assign_cleanfile();
 
-assign clean all to file.
+Resets all the non-saved changes (from other assign_* functions).
 
 =head2 assign_matchreplace
 
@@ -784,19 +791,29 @@ replace new data when matched.
 
 =head2 assign_append
 
+Used to add extra data to an existing section or to edit it.
+
     $sip_conf->assign_append(point=>['up'|'down'|'foot'],
                              section=>[section name],
                              data=>'key=value'|['key=value','key=value']|{key=>'value',key=>'value'});
 
-append data around with section name.
+This form is used to merely append new data.
 
 =over 3
 
-=item * point -> append data C<up> / C<down> / C<foot> with section.
+=item point 
 
-=item * section -> matched section name, expect 'unsection'.
+Append data C<up> / C<down> / C<foot> with section.
 
-=item * data -> new replace data in string/array/hash.
+=item section 
+
+Matched section name, expect 'unsection'. If ommited, data will be
+placed above first setcion, as in 'unsection', but then you cannot
+use C<point=>"foot">.
+
+=item data 
+
+New replace data in string/array/hash.
 
 =back
 
@@ -805,20 +822,21 @@ append data around with section name.
                              comkey=>[key,value],
                              data=>'key=value'|['key=value','key=value']|{key=>'value',key=>'value'};
 
-append data around with section name and key/value in same section.
+Appends data before, after or instead a given line. The line is
+the first line in C<section> where the key is C<key> and the value
+is C<value> (from C<comkey>.
 
 =over 2
 
-=item * point -> C<over> will overwrite with key/value matched.
+=item point 
 
-=item * comkey -> match key and value.
+C<over> will overwrite with key/value matched.
+
+=item comkey 
+
+Match key and value.
 
 =back
-
-    $sip_conf->assign_append(point=>'up'|'down',
-                             data=>'key=value'|['key=value','key=value']|{key=>'value',key=>'value'});
-
-simple append data without any section.
 
 =head2 assign_replacesection
 
